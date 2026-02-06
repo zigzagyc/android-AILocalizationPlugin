@@ -1,5 +1,7 @@
 # Android Localization Extension
 
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=for-the-badge&logo=buy-me-a-coffee)](https://www.buymeacoffee.com/zigzagyc)
+
 This IntelliJ/Android Studio plugin automatically adds localization to your Android project by translating `strings.xml` resources to a target language. It supports multiple translation providers including OpenAI (ChatGPT), Gemini, Grok, Google Translate, and Microsoft Translator.
 
 ## Features
@@ -69,3 +71,9 @@ This IntelliJ/Android Studio plugin automatically adds localization to your Andr
 ### Grok (xAI)
 1.  Go to the [xAI Console](https://console.x.ai/).
 2.  Create an API key.
+
+## Support
+
+If you find this plugin helpful, consider supporting its development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=for-the-badge&logo=buy-me-a-coffee)](https://www.buymeacoffee.com/zigzagyc)

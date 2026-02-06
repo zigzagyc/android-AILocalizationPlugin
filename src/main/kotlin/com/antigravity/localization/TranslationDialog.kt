@@ -12,6 +12,8 @@ import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
 import java.awt.event.ItemEvent
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JPasswordField
@@ -166,6 +168,33 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
             scanAndSelectUsedKeys()
         }
         
+        // Spacebar to toggle selection
+        stringTable.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                if (e.keyCode == KeyEvent.VK_SPACE) {
+                    val selectedRows = stringTable.selectedRows
+                    if (selectedRows.isNotEmpty()) {
+                        // Toggle based on the first selected row's state (inverted)
+                        val firstModelIndex = stringTable.convertRowIndexToModel(selectedRows[0])
+                        val currentState = tableModel.getValueAt(firstModelIndex, 0) as Boolean
+                        val newState = !currentState
+                        
+                        // Snapshot indices to avoid sort interference
+                        val modelIndices = IntArray(selectedRows.size)
+                        for (i in selectedRows.indices) {
+                            modelIndices[i] = stringTable.convertRowIndexToModel(selectedRows[i])
+                        }
+
+                        for (modelIndex in modelIndices) {
+                            tableModel.setValueAt(newState, modelIndex, 0)
+                        }
+                        e.consume()
+                        stringTable.repaint()
+                    }
+                }
+            }
+        })
+        
         // Initial state
         updateUIForService()
         val initialService = serviceComboBox.item
@@ -218,8 +247,14 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
     }
 
     private fun setSelectionForVisibleRows(selected: Boolean) {
-        for (i in 0 until stringTable.rowCount) {
-            val modelIndex = stringTable.convertRowIndexToModel(i)
+        // Snapshot model indices first to prevent sort interference during updates
+        val rowCount = stringTable.rowCount
+        val modelIndices = IntArray(rowCount)
+        for (i in 0 until rowCount) {
+            modelIndices[i] = stringTable.convertRowIndexToModel(i)
+        }
+        
+        for (modelIndex in modelIndices) {
             tableModel.setValueAt(selected, modelIndex, 0)
         }
     }

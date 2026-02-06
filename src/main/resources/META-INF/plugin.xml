@@ -1,0 +1,25 @@
+<idea-plugin>
+    <id>com.antigravity.localization.android-localization-extension</id>
+    <name>Android Localization Assistant</name>
+    <vendor email="user@example.com" url="https://www.example.com">AntiGravity</vendor>
+
+    <description><![CDATA[
+    Assistant for Android localization. Automatically translates strings.xml and arrays.xml using various translation services.
+    ]]>    </description>
+
+    <!-- Product and plugin compatibility requirements.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+    </extensions>
+
+    <actions>
+        <action id="com.antigravity.localization.TranslationAction" class="com.antigravity.localization.TranslationAction" text="Translate Android Strings" description="Translates strings.xml and arrays.xml to target language">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <!-- Add to context menu for XML files potentially -->
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

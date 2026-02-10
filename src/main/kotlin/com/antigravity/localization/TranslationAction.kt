@@ -23,11 +23,14 @@ import javax.xml.transform.TransformerFactory
 import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 
+import com.intellij.openapi.vfs.LocalFileSystem
+
 class TranslationAction : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val baseDir = project.baseDir ?: return
+        val basePath = project.basePath ?: return
+        val baseDir = LocalFileSystem.getInstance().findFileByPath(basePath) ?: return
 
         val contextFile = e.getData(CommonDataKeys.VIRTUAL_FILE)
         var stringFiles = mutableListOf<VirtualFile>()

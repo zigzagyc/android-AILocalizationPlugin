@@ -81,4 +81,78 @@ class OpenAIService : TranslationService {
             .get("content").asString
             .trim()
     }
+
+    override suspend fun verifyTranslationContext(
+        original: String,
+        translated: String,
+        contextList: List<String>,
+        targetLang: String,
+        apiKey: String
+    ): com.antigravity.localization.services.TranslationVerificationResult = withContext(Dispatchers.IO) {
+        if (contextList.isEmpty()) return@withContext com.antigravity.localization.services.TranslationVerificationResult()
+
+        val prompt = """
+            Analyze the following translation from an Android app:
+            Original String: "$original"
+            Translated String ($targetLang): "$translated"
+            
+            Usage Context Snippets:
+            ${contextList.joinToString("\n\n")}
+            
+            Given the usage context (e.g., button widths, layout constraints, typical UI space), is the translated string significantly too long and likely to get truncated or break the layout?
+            
+            Also analyze if the original string was an abbreviation. If it was, explain what it means, and try to provide a suitable abbreviation in the target language.
+            
+            Respond strictly in valid JSON format with the following keys, no markdown blocks:
+            - isTooLong (boolean)
+            - targetAbbreviationSuggestion (string, or null if not applicable)
+            - originalAbbreviationMeaning (string, or null if original is not an abbreviation)
+        """.trimIndent()
+
+        val messages = JsonArray()
+        messages.add(JsonObject().apply {
+            addProperty("role", "system")
+            addProperty("content", "You are an expert Android UI reviewer and translator.")
+        })
+        messages.add(JsonObject().apply {
+            addProperty("role", "user")
+            addProperty("content", prompt)
+        })
+
+        val requestBody = JsonObject().apply {
+            addProperty("model", model)
+            add("messages", messages)
+            val responseFormat = JsonObject()
+            responseFormat.addProperty("type", "json_object")
+            add("response_format", responseFormat)
+        }
+
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer $apiKey")
+            .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
+            .build()
+
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+
+        if (response.statusCode() == 200) {
+            try {
+                val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
+                val choices = jsonResponse.getAsJsonArray("choices")
+                val content = choices.get(0).asJsonObject.getAsJsonObject("message").get("content").asString
+                
+                val resultJson = gson.fromJson(content, JsonObject::class.java)
+                return@withContext com.antigravity.localization.services.TranslationVerificationResult(
+                    isTooLong = resultJson.get("isTooLong")?.asBoolean ?: false,
+                    targetAbbreviationSuggestion = if (resultJson.has("targetAbbreviationSuggestion") && !resultJson.get("targetAbbreviationSuggestion").isJsonNull) resultJson.get("targetAbbreviationSuggestion").asString else null,
+                    originalAbbreviationMeaning = if (resultJson.has("originalAbbreviationMeaning") && !resultJson.get("originalAbbreviationMeaning").isJsonNull) resultJson.get("originalAbbreviationMeaning").asString else null
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        
+        return@withContext com.antigravity.localization.services.TranslationVerificationResult()
+    }
 }

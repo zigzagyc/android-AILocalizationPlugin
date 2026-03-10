@@ -12,6 +12,10 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.PsiSearchHelper
+import com.intellij.psi.search.UsageSearchContext
+import com.intellij.psi.PsiElement
 import kotlinx.coroutines.runBlocking
 import org.w3c.dom.Document
 import org.w3c.dom.Element
@@ -108,7 +112,8 @@ class TranslationAction : AnAction() {
             private var results: List<TranslationResult>? = null
 
             override fun run(indicator: ProgressIndicator) {
-                results = translateProject(project, service, apiKey, targetLang, context, selectedKeys, stringFiles, indicator)
+                val enableContextChecks = dialog.contextCheckCheckBox.isSelected
+                results = translateProject(project, service, apiKey, targetLang, context, selectedKeys, stringFiles, indicator, enableContextChecks)
             }
 
             override fun onSuccess() {
@@ -163,10 +168,43 @@ class TranslationAction : AnAction() {
         }
     }
 
-    private fun translateProject(project: Project, service: TranslationService, apiKey: String, targetLang: String, context: String?, selectedKeys: Set<String>, filesToTranslate: List<VirtualFile>, indicator: ProgressIndicator): List<TranslationResult> {
+    private fun translateProject(project: Project, service: TranslationService, apiKey: String, targetLang: String, context: String?, selectedKeys: Set<String>, filesToTranslate: List<VirtualFile>, indicator: ProgressIndicator, enableContextChecks: Boolean): List<TranslationResult> {
         val results = mutableListOf<TranslationResult>()
         val factory = DocumentBuilderFactory.newInstance()
         val builder = factory.newDocumentBuilder()
+        
+        // 1. Gather contexts if enabled
+        val usagesMap = mutableMapOf<String, List<String>>()
+        if (enableContextChecks) {
+            indicator.text = "Extracting layout/code usages for context-aware checks..."
+            val helper = PsiSearchHelper.getInstance(project)
+            val scope = GlobalSearchScope.projectScope(project)
+            val totalKeys = selectedKeys.size
+            var keyIdx = 0
+            
+            for (key in selectedKeys) {
+                if (indicator.isCanceled) return results
+                indicator.fraction = keyIdx.toDouble() / totalKeys.toDouble()
+                keyIdx++
+                
+                val contexts = mutableListOf<String>()
+                try {
+                    helper.processElementsWithWord({ element: PsiElement, offsetInElement: Int ->
+                        // Get a snippet around the usage
+                        val fileText = element.containingFile.text
+                        val textRange = element.textRange
+                        val start = maxOf(0, textRange.startOffset - 100)
+                        val end = minOf(fileText.length, textRange.endOffset + 100)
+                        val snippet = fileText.substring(start, end).replace('\n', ' ').trim()
+                        contexts.add("...$snippet...")
+                        true
+                    }, scope, key, (UsageSearchContext.IN_CODE + UsageSearchContext.IN_STRINGS).toShort(), true)
+                } catch (e: Exception) {
+                    // Ignore index errors
+                }
+                usagesMap[key] = contexts.take(5) // Limit to 5 context snippets
+            }
+        }
 
         try {
             for (file in filesToTranslate) {
@@ -205,7 +243,29 @@ class TranslationAction : AnAction() {
                         }
                         
                         val ratio = if (originalText.isNotEmpty()) translatedText.length.toFloat() / originalText.length.toFloat() else 0f
-                        results.add(TranslationResult(file, name, originalText, translatedText, ratio))
+                        
+                        var updatedTranslatedText = translatedText
+                        var suggestion = ""
+                        var warningTitle = ""
+                        var warningDetail = ""
+
+                        if (enableContextChecks && usagesMap.containsKey(name) && usagesMap[name]!!.isNotEmpty()) {
+                            // Perform Context Check
+                            try {
+                                val verResult = runBlocking {
+                                    service.verifyTranslationContext(originalText, translatedText, usagesMap[name]!!, targetLang, apiKey)
+                                }
+                                if (verResult.isTooLong) {
+                                    suggestion = verResult.targetAbbreviationSuggestion ?: ""
+                                    warningTitle = "Length Warning"
+                                    warningDetail = "Translation may be too long for context! Source Meaning: ${verResult.originalAbbreviationMeaning ?: "N/A"}"
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                        
+                        results.add(TranslationResult(file, name, originalText, updatedTranslatedText, ratio, suggestion, warningTitle, warningDetail))
                         
                         processedCount++
                         indicator.fraction = (processedCount.toDouble() / nodesToProcessList.size)

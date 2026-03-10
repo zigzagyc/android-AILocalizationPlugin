@@ -3,6 +3,7 @@ package com.antigravity.localization
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
+import com.intellij.ui.components.JBCheckBox
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.table.JBTable
 import com.intellij.ui.components.JBScrollPane
@@ -77,6 +78,7 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
     
     val targetLangComboBox = ComboBox(languages.keys.sorted().toTypedArray())
     val contextField = JBTextField()
+    val contextCheckCheckBox = JBCheckBox("Enable advanced context-aware length checks & abbreviation suggestions")
     
     // Table for string selection
     private val tableModel = object : DefaultTableModel(arrayOf("Select", "Key", "Value"), 0) {
@@ -448,6 +450,13 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
         c.weightx = 1.0
         panel.add(contextField, c)
         
+        // Context Check Checkbox
+        c.gridx = 0
+        c.gridy = 6
+        c.gridwidth = 2
+        c.weightx = 1.0
+        panel.add(contextCheckCheckBox, c)
+        
         // Search and Buttons Panel
         val actionPanel = JPanel(BorderLayout())
         val searchPanel = JPanel(BorderLayout())
@@ -463,20 +472,20 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
         actionPanel.add(buttonPanel, BorderLayout.CENTER)
         
         c.gridx = 0
-        c.gridy = 6
+        c.gridy = 7
         c.gridwidth = 2
         panel.add(actionPanel, c)
 
         // String Selection Table
         c.gridx = 0
-        c.gridy = 7
+        c.gridy = 8
         c.gridwidth = 2
         c.weightx = 1.0
         c.weighty = 1.0
         c.fill = GridBagConstraints.BOTH
         panel.add(JBLabel("Select strings to translate:"), c)
         
-        c.gridy = 8
+        c.gridy = 9
         val scrollPane = JBScrollPane(stringTable)
         scrollPane.preferredSize = Dimension(500, 300)
         panel.add(scrollPane, c)

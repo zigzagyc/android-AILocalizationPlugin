@@ -83,4 +83,91 @@ class GeminiService : TranslationService {
         
         throw RuntimeException("Gemini returned unexpected response structure: ${response.body()}")
     }
+
+    override suspend fun verifyTranslationContext(
+        original: String,
+        translated: String,
+        contextList: List<String>,
+        targetLang: String,
+        apiKey: String
+    ): com.antigravity.localization.services.TranslationVerificationResult = withContext(Dispatchers.IO) {
+        if (contextList.isEmpty()) return@withContext com.antigravity.localization.services.TranslationVerificationResult()
+
+        val prompt = """
+            Analyze the following translation from an Android app:
+            Original String: "$original"
+            Translated String ($targetLang): "$translated"
+            
+            Usage Context Snippets:
+            ${contextList.joinToString("\n\n")}
+            
+            Given the usage context (e.g., button widths, layout constraints, typical UI space), is the translated string significantly too long and likely to get truncated or break the layout?
+            
+            Also analyze if the original string was an abbreviation. If it was, explain what it means, and try to provide a suitable abbreviation in the target language.
+            
+            Respond strictly in valid JSON format with the following keys, no markdown blocks:
+            - isTooLong (boolean)
+            - targetAbbreviationSuggestion (string, or null if not applicable)
+            - originalAbbreviationMeaning (string, or null if original is not an abbreviation)
+        """.trimIndent()
+
+        val parts = JsonArray()
+        parts.add(JsonObject().apply {
+            addProperty("text", prompt)
+        })
+
+        val contents = JsonArray()
+        contents.add(JsonObject().apply {
+            addProperty("role", "user")
+            add("parts", parts)
+        })
+
+        val requestBody = JsonObject().apply {
+            add("contents", contents)
+            val generationConfig = JsonObject()
+            generationConfig.addProperty("response_mime_type", "application/json")
+            add("generationConfig", generationConfig)
+            val systemInstruction = JsonObject().apply {
+                val sysParts = JsonArray()
+                sysParts.add(JsonObject().apply {
+                    addProperty("text", "You are an expert Android UI reviewer and translator.")
+                })
+                add("parts", sysParts)
+            }
+            add("systemInstruction", systemInstruction)
+        }
+
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
+            .build()
+
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+
+        if (response.statusCode() == 200) {
+            try {
+                val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
+                val candidates = jsonResponse.getAsJsonArray("candidates")
+                if (candidates != null && candidates.size() > 0) {
+                    val candidate = candidates.get(0).asJsonObject
+                    val content = candidate.getAsJsonObject("content")
+                    val partsResponse = content.getAsJsonArray("parts")
+                    if (partsResponse != null && partsResponse.size() > 0) {
+                        val text = partsResponse.get(0).asJsonObject.get("text").asString.trim()
+                        val resultJson = gson.fromJson(text, JsonObject::class.java)
+                        return@withContext com.antigravity.localization.services.TranslationVerificationResult(
+                            isTooLong = resultJson.get("isTooLong")?.asBoolean ?: false,
+                            targetAbbreviationSuggestion = if (resultJson.has("targetAbbreviationSuggestion") && !resultJson.get("targetAbbreviationSuggestion").isJsonNull) resultJson.get("targetAbbreviationSuggestion").asString else null,
+                            originalAbbreviationMeaning = if (resultJson.has("originalAbbreviationMeaning") && !resultJson.get("originalAbbreviationMeaning").isJsonNull) resultJson.get("originalAbbreviationMeaning").asString else null
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        
+        return@withContext com.antigravity.localization.services.TranslationVerificationResult()
+    }
 }

@@ -16,4 +16,19 @@ interface TranslationService {
      * @return The translated text.
      */
     suspend fun translate(text: String, targetLang: String, context: String?, apiKey: String): String
+    
+    /**
+     * Verifies if a translated string is appropriate given its usage context.
+     */
+    suspend fun verifyTranslationContext(
+        original: String,
+        translated: String,
+        contextList: List<String>,
+        targetLang: String,
+        apiKey: String
+    ): TranslationVerificationResult {
+        // Default implementation to avoid breaking all existing services immediately.
+        // Can be overridden by AI services.
+        return TranslationVerificationResult(isTooLong = false)
+    }
 }

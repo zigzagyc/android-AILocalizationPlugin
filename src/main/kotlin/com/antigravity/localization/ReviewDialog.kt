@@ -12,13 +12,22 @@ import javax.swing.JTable
 import javax.swing.table.DefaultTableCellRenderer
 import javax.swing.table.DefaultTableModel
 
-data class TranslationResult(val file: VirtualFile, val key: String, val original: String, var translated: String, val ratio: Float)
+data class TranslationResult(
+    val file: VirtualFile,
+    val key: String,
+    val original: String,
+    var translated: String,
+    val ratio: Float,
+    val suggestion: String = "",
+    val warningTitle: String = "",
+    val warningDetail: String = ""
+)
 
 class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper(true) {
 
-    private val tableModel = object : DefaultTableModel(arrayOf("File", "Key", "Original", "Translated", "Ratio"), 0) {
+    private val tableModel = object : DefaultTableModel(arrayOf("File", "Key", "Original", "Translated", "Ratio", "Warning", "Suggestion"), 0) {
         override fun isCellEditable(row: Int, column: Int): Boolean {
-            return column == 3 // Only Translated column is editable
+            return column == 3 || column == 6 // Translated and Suggestion (if they want to copy it) can be selectable
         }
 
         override fun getColumnClass(columnIndex: Int): Class<*> {
@@ -32,7 +41,7 @@ class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper
         title = "Review Translations"
         
         for (res in context) {
-            tableModel.addRow(arrayOf(res.file.name, res.key, res.original, res.translated, String.format("%.2f", res.ratio)))
+            tableModel.addRow(arrayOf(res.file.name, res.key, res.original, res.translated, String.format("%.2f", res.ratio), res.warningTitle, res.suggestion))
         }
 
         // Adjust column widths
@@ -41,6 +50,8 @@ class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper
         table.columnModel.getColumn(2).preferredWidth = 200
         table.columnModel.getColumn(3).preferredWidth = 200
         table.columnModel.getColumn(4).preferredWidth = 50
+        table.columnModel.getColumn(5).preferredWidth = 100
+        table.columnModel.getColumn(6).preferredWidth = 150
 
         // Set custom renderer for warning
         table.setDefaultRenderer(Object::class.java, LengthWarningRenderer())
@@ -84,7 +95,7 @@ class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper
         return list
     }
 
-    private class LengthWarningRenderer : DefaultTableCellRenderer() {
+    private inner class LengthWarningRenderer : DefaultTableCellRenderer() {
         override fun getTableCellRendererComponent(
             table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int
         ): Component {
@@ -92,22 +103,39 @@ class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper
             
             if (table != null) {
                 try {
-                    // Ratio is at column 4
-                    val ratioStr = table.getValueAt(row, 4) as? String
-                    if (ratioStr != null) {
-                        val ratio = ratioStr.toFloatOrNull() ?: 0f
+                    val warningTitle = table.getValueAt(row, 5) as? String
+                    
+                    if (!warningTitle.isNullOrBlank()) {
+                        // Context LLM Warning
+                        if (!isSelected) {
+                            c.background = Color(255, 200, 200) // Light red background warning
+                        }
                         
-                        // Heuristic: If translation is > 1.5x longer than original
-                        if (ratio > 1.5) {
-                            if (!isSelected) {
-                                c.background = Color(255, 200, 200) // Light red background warning
-                            }
-                            toolTipText = "Translation is significantly longer than original (> 150%)"
+                        val key = table.getValueAt(row, 1) as String
+                        val res = context.find { it.key == key }
+                        if (res != null) {
+                            toolTipText = res.warningDetail
                         } else {
-                            if (!isSelected) {
-                                c.background = table.background
+                            toolTipText = "Translation may be too long for context!"
+                        }
+                    } else {
+                        // Ratio is at column 4
+                        val ratioStr = table.getValueAt(row, 4) as? String
+                        if (ratioStr != null) {
+                            val ratio = ratioStr.toFloatOrNull() ?: 0f
+                            
+                            // Heuristic: If translation is > 1.5x longer than original
+                            if (ratio > 1.5) {
+                                if (!isSelected) {
+                                    c.background = Color(255, 230, 200) // Orange warning for heuristic
+                                }
+                                toolTipText = "Translation is significantly longer than original (> 150%)"
+                            } else {
+                                if (!isSelected) {
+                                    c.background = table.background
+                                }
+                                toolTipText = null
                             }
-                            toolTipText = null
                         }
                     }
                 } catch (e: Exception) {

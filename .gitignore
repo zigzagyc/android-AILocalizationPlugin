@@ -64,3 +64,5 @@ google-services.json
 .DS_Store
 
 gradle_bootstrap/
+.gradle_home/
+build_errors.txt

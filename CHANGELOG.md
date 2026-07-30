@@ -1,3 +1,6 @@
+## [1.0.5]
+- Added existing translation verification, interactive diff selection, static layout adaptability suggestions, and static layout XML screenshot capture.
+
 ## [1.0.4]
 - Fixed module compatibility for JetBrains Gateway and non-Java IDE environments by removing unnecessary mandatory Java module dependency.
 - Added existing target language translation verification and interactive diff selection (Keep Existing vs Use New).

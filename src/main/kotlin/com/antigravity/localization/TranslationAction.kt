@@ -121,6 +121,16 @@ class TranslationAction : AnAction() {
 
             override fun onSuccess() {
                 if (results != null && results!!.isNotEmpty()) {
+                    val quotaItems = results!!.filter { it.status == "Quota Exceeded" }
+                    if (quotaItems.isNotEmpty()) {
+                        val completedCount = results!!.size - quotaItems.size
+                        Messages.showWarningDialog(
+                            project,
+                            "Quota limit reached after translating $completedCount strings.\nAll $completedCount completed translations have been preserved.\n\nYou can review and save completed strings now, or rerun for remaining uncompleted strings using another provider.",
+                            "Quota Limit Reached"
+                        )
+                    }
+
                     // Show Review Dialog on EDT
                     val reviewDialog = ReviewDialog(results!!, project = project, targetLang = targetLang)
                     if (reviewDialog.showAndGet()) {
@@ -263,16 +273,19 @@ class TranslationAction : AnAction() {
                             else -> "Modified"
                         }
                         
+                        var quotaExceeded = false
                         val translatedText = try {
                             runBlocking { service.translate(originalText, targetLang, context, apiKey) }
                         } catch (e: Exception) {
                             if (e is com.antigravity.localization.services.QuotaExceededException) {
-                                throw e
+                                quotaExceeded = true
+                                existingVal ?: "[Quota Exceeded - Change Provider]"
+                            } else {
+                                "[Error: ${e.message}]"
                             }
-                            "[Error: ${e.message}]"
                         }
                         
-                        val finalStatus = if (existingVal != null && existingVal == translatedText) "Unchanged" else status
+                        val finalStatus = if (quotaExceeded) "Quota Exceeded" else if (existingVal != null && existingVal == translatedText) "Unchanged" else status
                         val ratio = if (originalText.isNotEmpty()) translatedText.length.toFloat() / originalText.length.toFloat() else 0f
                         
                         var suggestion = ""
@@ -316,6 +329,10 @@ class TranslationAction : AnAction() {
                         
                         processedCount++
                         indicator.fraction = (processedCount.toDouble() / nodesToProcessList.size)
+
+                        if (quotaExceeded) {
+                            break
+                        }
                     }
 
                 } catch (e: Exception) {

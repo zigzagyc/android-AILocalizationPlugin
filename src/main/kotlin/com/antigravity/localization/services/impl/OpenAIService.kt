@@ -46,16 +46,29 @@ class OpenAIService : TranslationService {
                 add("messages", messages)
             }
 
-            val request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.openai.com/v1/chat/completions"))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer $apiKey")
-                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
-                .build()
+            var attempts = 0
+            val backoffs = listOf(2000L, 4000L, 8000L)
+            var response: HttpResponse<String>? = null
 
-            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+            while (attempts <= backoffs.size) {
+                val request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer $apiKey")
+                    .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
+                    .build()
 
-            if (response.statusCode() == 200) {
+                response = client.send(request, HttpResponse.BodyHandlers.ofString())
+
+                if (response.statusCode() == 429 && attempts < backoffs.size) {
+                    Thread.sleep(backoffs[attempts])
+                    attempts++
+                    continue
+                }
+                break
+            }
+
+            if (response != null && response.statusCode() == 200) {
                 model = candidateModel
                 val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
                 val choices = jsonResponse.getAsJsonArray("choices")
@@ -65,7 +78,7 @@ class OpenAIService : TranslationService {
                         .get("content").asString
                         .trim()
                 }
-            } else {
+            } else if (response != null) {
                 val errorBody = response.body()
                 try {
                     val jsonResponse = gson.fromJson(errorBody, JsonObject::class.java)

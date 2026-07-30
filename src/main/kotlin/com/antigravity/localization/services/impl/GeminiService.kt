@@ -45,15 +45,28 @@ class GeminiService : TranslationService {
         var lastErrorMsg = ""
 
         for (candidateModel in candidatesToTry) {
-            val request = HttpRequest.newBuilder()
-                .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/models/$candidateModel:generateContent?key=$apiKey"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
-                .build()
+            var attempts = 0
+            val backoffs = listOf(2000L, 4000L, 8000L)
+            var response: HttpResponse<String>? = null
 
-            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+            while (attempts <= backoffs.size) {
+                val request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/models/$candidateModel:generateContent?key=$apiKey"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
+                    .build()
 
-            if (response.statusCode() == 200) {
+                response = client.send(request, HttpResponse.BodyHandlers.ofString())
+
+                if (response.statusCode() == 429 && attempts < backoffs.size) {
+                    Thread.sleep(backoffs[attempts])
+                    attempts++
+                    continue
+                }
+                break
+            }
+
+            if (response != null && response.statusCode() == 200) {
                 model = candidateModel // Remember working model
                 val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
                 try {
@@ -69,7 +82,7 @@ class GeminiService : TranslationService {
                 } catch (e: Exception) {
                     throw RuntimeException("Failed to parse Gemini response: ${response.body()}", e)
                 }
-            } else {
+            } else if (response != null) {
                 val errorBody = response.body()
                 try {
                     val jsonResponse = gson.fromJson(errorBody, JsonObject::class.java)

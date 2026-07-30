@@ -1,3 +1,8 @@
+## [1.0.7]
+- Added Anthropic Claude translation service integration (`claude-5-sonnet`, `claude-3-7-sonnet`, etc.).
+- Overhauled layout preview screenshot engine to resolve all project string resources and render accurate horizontal/vertical UI layouts with multi-line text wrapping.
+- Implemented universal 404 model fallback loops and 3-layer Quota Exceeded partial result preservation.
+
 ## [1.0.6]
 - Added dynamic AI model fetching per vendor (OpenAI, Gemini, Grok) with live API key queries and automatic 404 fallback handling.
 

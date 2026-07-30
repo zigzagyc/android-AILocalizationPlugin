@@ -21,6 +21,7 @@ object ModelFetcher {
             "OpenAI (ChatGPT)" -> fetchOpenAIModels(apiKey)
             "Gemini" -> fetchGeminiModels(apiKey)
             "Grok (xAI)" -> fetchGrokModels(apiKey)
+            "Anthropic Claude" -> fetchClaudeModels(apiKey)
             else -> emptyList()
         }
     }
@@ -105,5 +106,33 @@ object ModelFetcher {
             e.printStackTrace()
         }
         return listOf("grok-beta", "grok-2", "grok-2-mini", "grok-vision-beta")
+    }
+
+    private fun fetchClaudeModels(apiKey: String): List<String> {
+        try {
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.anthropic.com/v1/models"))
+                .header("x-api-key", apiKey)
+                .header("anthropic-version", "2023-06-01")
+                .GET()
+                .build()
+
+            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() == 200) {
+                val json = gson.fromJson(response.body(), JsonObject::class.java)
+                val data = json.getAsJsonArray("data") ?: return emptyList()
+                val models = mutableListOf<String>()
+                for (i in 0 until data.size()) {
+                    val id = data.get(i).asJsonObject.get("id").asString
+                    if (id.contains("claude")) {
+                        models.add(id)
+                    }
+                }
+                if (models.isNotEmpty()) return models.sortedDescending()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return listOf("claude-5-sonnet", "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229")
     }
 }

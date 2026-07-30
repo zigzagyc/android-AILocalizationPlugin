@@ -107,6 +107,7 @@ class TranslationAction : AnAction() {
                 is OpenAIService -> service.model = selectedModel
                 is GeminiService -> service.model = selectedModel
                 is GrokService -> service.model = selectedModel
+                is ClaudeService -> service.model = selectedModel
             }
         }
 
@@ -162,6 +163,7 @@ class TranslationAction : AnAction() {
             "OpenAI (ChatGPT)" -> OpenAIService()
             "Gemini" -> GeminiService()
             "Grok (xAI)" -> GrokService()
+            "Anthropic Claude" -> com.antigravity.localization.services.impl.ClaudeService()
             "Google Translate" -> GoogleTranslationService()
             "Microsoft Translator" -> MicrosoftTranslationService()
             "DeepL" -> DeepLService()

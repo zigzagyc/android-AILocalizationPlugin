@@ -36,7 +36,7 @@ import javax.swing.JButton
 import kotlinx.coroutines.runBlocking
 
 class TranslationDialog(private val project: Project, private val stringMap: Map<String, String>) : DialogWrapper(true) {
-    val serviceComboBox = ComboBox(arrayOf("OpenAI (ChatGPT)", "Gemini", "Grok (xAI)", "Google Translate", "Microsoft Translator", "DeepL", "AWS Translate"))
+    val serviceComboBox = ComboBox(arrayOf("OpenAI (ChatGPT)", "Gemini", "Grok (xAI)", "Anthropic Claude", "Google Translate", "Microsoft Translator", "DeepL", "AWS Translate"))
     val apiKeyField = JPasswordField()
     val regionComboBox = ComboBox(arrayOf<String>())
     val regionLabel = JBLabel("Region:")
@@ -276,6 +276,8 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
             properties.setValue(MODEL_PREFIX + "Gemini", modelComboBox.item as String)
         } else if (currentService == "Grok (xAI)") {
             properties.setValue(MODEL_PREFIX + "Grok", modelComboBox.item as String)
+        } else if (currentService == "Anthropic Claude") {
+            properties.setValue(MODEL_PREFIX + "Claude", modelComboBox.item as String)
         }
         super.doOKAction()
     }
@@ -391,7 +393,7 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
         }
 
         // Update Model Visibility and Options
-        val isAiVendor = service == "OpenAI (ChatGPT)" || service == "Gemini" || service == "Grok (xAI)"
+        val isAiVendor = service == "OpenAI (ChatGPT)" || service == "Gemini" || service == "Grok (xAI)" || service == "Anthropic Claude"
 
         modelLabel.isVisible = isAiVendor
         modelComboBox.isVisible = isAiVendor
@@ -422,6 +424,10 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
                 listOf("grok-beta", "grok-2", "grok-2-mini", "grok-vision-beta").forEach { modelComboBox.addItem(it) }
                 modelComboBox.item = properties.getValue(MODEL_PREFIX + "Grok", "grok-beta")
             }
+            "Anthropic Claude" -> {
+                listOf("claude-5-sonnet", "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229").forEach { modelComboBox.addItem(it) }
+                modelComboBox.item = properties.getValue(MODEL_PREFIX + "Claude", "claude-3-7-sonnet-20250219")
+            }
         }
     }
 
@@ -451,6 +457,7 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
             "OpenAI (ChatGPT)" -> "Get API Key: https://platform.openai.com/api-keys"
             "Gemini" -> "Get API Key: https://aistudio.google.com/app/apikey"
             "Grok (xAI)" -> "Get API Key: https://console.x.ai/"
+            "Anthropic Claude" -> "Get API Key: https://console.anthropic.com/settings/keys"
             "Google Translate" -> "Get API Key: https://console.cloud.google.com/apis/credentials (Enable Cloud Translation API)"
             "Microsoft Translator" -> "Get API Key: Azure Portal -> Translator -> Keys (Select Region below or use 'global')."
             "DeepL" -> "Get API Key: https://www.deepl.com/pro-api. (:fx suffix for Free API)"

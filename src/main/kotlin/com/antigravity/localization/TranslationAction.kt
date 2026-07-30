@@ -189,12 +189,12 @@ class TranslationAction : AnAction() {
                 
                 val contexts = mutableListOf<String>()
                 try {
-                    helper.processElementsWithWord({ element: PsiElement, offsetInElement: Int ->
-                        // Get a snippet around the usage
+                    helper.processElementsWithWord({ element: PsiElement, _ ->
+                        // Get a snippet around the usage (tag and surrounding XML/Kotlin attrs)
                         val fileText = element.containingFile.text
                         val textRange = element.textRange
-                        val start = maxOf(0, textRange.startOffset - 100)
-                        val end = minOf(fileText.length, textRange.endOffset + 100)
+                        val start = maxOf(0, textRange.startOffset - 120)
+                        val end = minOf(fileText.length, textRange.endOffset + 120)
                         val snippet = fileText.substring(start, end).replace('\n', ' ').trim()
                         contexts.add("...$snippet...")
                         true
@@ -211,6 +211,26 @@ class TranslationAction : AnAction() {
                 if (indicator.isCanceled) break
                 indicator.text = "Processing ${file.name}..."
                 
+                // Parse existing target language file (if any)
+                val existingTargetMap = mutableMapOf<String, String>()
+                try {
+                    val valuesDir = file.parent
+                    val resDir = valuesDir?.parent
+                    val targetValuesDir = resDir?.findChild("values-$targetLang")
+                    val targetFile = targetValuesDir?.findChild(file.name)
+                    if (targetFile != null && targetFile.exists()) {
+                        val existingDoc = builder.parse(targetFile.inputStream)
+                        existingDoc.documentElement.normalize()
+                        val nodes = existingDoc.getElementsByTagName("string")
+                        for (i in 0 until nodes.length) {
+                            val element = nodes.item(i) as Element
+                            existingTargetMap[element.getAttribute("name")] = element.textContent
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore missing target file parse error
+                }
+
                 try {
                     val document = builder.parse(file.inputStream)
                     document.documentElement.normalize()
@@ -231,23 +251,30 @@ class TranslationAction : AnAction() {
                         if (indicator.isCanceled) break
                         val name = node.getAttribute("name")
                         val originalText = node.textContent
+                        val existingVal = existingTargetMap[name]
+                        
+                        val status = when {
+                            existingVal == null -> "Missing"
+                            existingVal == originalText -> "Untranslated"
+                            else -> "Modified"
+                        }
                         
                         val translatedText = try {
                             runBlocking { service.translate(originalText, targetLang, context, apiKey) }
                         } catch (e: Exception) {
                             if (e is com.antigravity.localization.services.QuotaExceededException) {
-                                // Re-throw to be caught by the outer loop and stop everything
                                 throw e
                             }
                             "[Error: ${e.message}]"
                         }
                         
+                        val finalStatus = if (existingVal != null && existingVal == translatedText) "Unchanged" else status
                         val ratio = if (originalText.isNotEmpty()) translatedText.length.toFloat() / originalText.length.toFloat() else 0f
                         
-                        var updatedTranslatedText = translatedText
                         var suggestion = ""
                         var warningTitle = ""
                         var warningDetail = ""
+                        var layoutAdaptabilitySuggestion = ""
 
                         if (enableContextChecks && usagesMap.containsKey(name) && usagesMap[name]!!.isNotEmpty()) {
                             // Perform Context Check
@@ -255,17 +282,33 @@ class TranslationAction : AnAction() {
                                 val verResult = runBlocking {
                                     service.verifyTranslationContext(originalText, translatedText, usagesMap[name]!!, targetLang, apiKey)
                                 }
-                                if (verResult.isTooLong) {
+                                if (verResult.isTooLong || !verResult.layoutAdaptabilitySuggestion.isNullOrBlank()) {
                                     suggestion = verResult.targetAbbreviationSuggestion ?: ""
-                                    warningTitle = "Length Warning"
-                                    warningDetail = "Translation may be too long for context! Source Meaning: ${verResult.originalAbbreviationMeaning ?: "N/A"}"
+                                    warningTitle = "Length / Layout Warning"
+                                    warningDetail = "Translation may be too long for container! Meaning: ${verResult.originalAbbreviationMeaning ?: "N/A"}"
+                                    layoutAdaptabilitySuggestion = verResult.layoutAdaptabilitySuggestion ?: ""
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
                         }
                         
-                        results.add(TranslationResult(file, name, originalText, updatedTranslatedText, ratio, suggestion, warningTitle, warningDetail))
+                        results.add(
+                            TranslationResult(
+                                file = file,
+                                key = name,
+                                original = originalText,
+                                translated = translatedText,
+                                ratio = ratio,
+                                suggestion = suggestion,
+                                warningTitle = warningTitle,
+                                warningDetail = warningDetail,
+                                existingTranslation = existingVal,
+                                status = finalStatus,
+                                useExisting = false,
+                                layoutAdaptabilitySuggestion = layoutAdaptabilitySuggestion
+                            )
+                        )
                         
                         processedCount++
                         indicator.fraction = (processedCount.toDouble() / nodesToProcessList.size)

@@ -80,14 +80,17 @@ class GrokService : TranslationService {
             Usage Context Snippets:
             ${contextList.joinToString("\n\n")}
             
-            Given the usage context (e.g., button widths, layout constraints, typical UI space), is the translated string significantly too long and likely to get truncated or break the layout?
+            Given the usage context (e.g., button widths, layout constraints, maxLines, view type), is the translated string significantly too long and likely to get truncated or break the layout?
             
-            Also analyze if the original string was an abbreviation. If it was, explain what it means, and try to provide a suitable abbreviation in the target language.
+            Please provide TWO distinct suggestions if it might be too long or constrained:
+            1. Text Shortening: Suggest a shorter phrasing or abbreviation in the target language.
+            2. Layout Adaptability: Suggest concrete layout modifications (e.g., add app:autoSizeTextType="uniform", set android:ellipsize="end", set android:maxLines="2", or adjust layout constraints).
             
             Respond strictly in valid JSON format with the following keys, no markdown blocks:
             - isTooLong (boolean)
             - targetAbbreviationSuggestion (string, or null if not applicable)
             - originalAbbreviationMeaning (string, or null if original is not an abbreviation)
+            - layoutAdaptabilitySuggestion (string, or null if not applicable)
         """.trimIndent()
 
         val messages = JsonArray()
@@ -127,7 +130,8 @@ class GrokService : TranslationService {
                 return@withContext com.antigravity.localization.services.TranslationVerificationResult(
                     isTooLong = resultJson.get("isTooLong")?.asBoolean ?: false,
                     targetAbbreviationSuggestion = if (resultJson.has("targetAbbreviationSuggestion") && !resultJson.get("targetAbbreviationSuggestion").isJsonNull) resultJson.get("targetAbbreviationSuggestion").asString else null,
-                    originalAbbreviationMeaning = if (resultJson.has("originalAbbreviationMeaning") && !resultJson.get("originalAbbreviationMeaning").isJsonNull) resultJson.get("originalAbbreviationMeaning").asString else null
+                    originalAbbreviationMeaning = if (resultJson.has("originalAbbreviationMeaning") && !resultJson.get("originalAbbreviationMeaning").isJsonNull) resultJson.get("originalAbbreviationMeaning").asString else null,
+                    layoutAdaptabilitySuggestion = if (resultJson.has("layoutAdaptabilitySuggestion") && !resultJson.get("layoutAdaptabilitySuggestion").isJsonNull) resultJson.get("layoutAdaptabilitySuggestion").asString else null
                 )
             } catch (e: Exception) {
                 e.printStackTrace()

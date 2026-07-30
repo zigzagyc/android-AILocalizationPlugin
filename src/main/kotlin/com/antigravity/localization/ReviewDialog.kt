@@ -20,40 +20,60 @@ data class TranslationResult(
     val ratio: Float,
     val suggestion: String = "",
     val warningTitle: String = "",
-    val warningDetail: String = ""
+    val warningDetail: String = "",
+    val existingTranslation: String? = null,
+    val status: String = "New",
+    var useExisting: Boolean = false,
+    val layoutAdaptabilitySuggestion: String = ""
 )
 
 class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper(true) {
 
-    private val tableModel = object : DefaultTableModel(arrayOf("File", "Key", "Original", "Translated", "Ratio", "Warning", "Suggestion"), 0) {
+    private val tableModel = object : DefaultTableModel(
+        arrayOf("File", "Key", "Original", "Existing", "New Translation", "Keep Existing?", "Status", "Text Suggestion", "Layout Adaptability Suggestion"), 0
+    ) {
         override fun isCellEditable(row: Int, column: Int): Boolean {
-            return column == 3 || column == 6 // Translated and Suggestion (if they want to copy it) can be selectable
+            // Column 4 (New Translation), 5 (Keep Existing checkbox), 7 (Text Suggestion) editable/selectable
+            return column == 4 || column == 5 || column == 7 || column == 8
         }
 
         override fun getColumnClass(columnIndex: Int): Class<*> {
-            return String::class.java
+            return if (columnIndex == 5) java.lang.Boolean::class.java else String::class.java
         }
     }
 
     private val table = JBTable(tableModel)
 
     init {
-        title = "Review Translations"
+        title = "Review & Select Translations"
         
         for (res in context) {
-            tableModel.addRow(arrayOf(res.file.name, res.key, res.original, res.translated, String.format("%.2f", res.ratio), res.warningTitle, res.suggestion))
+            val existingDisplay = res.existingTranslation ?: "-"
+            tableModel.addRow(arrayOf(
+                res.file.name,
+                res.key,
+                res.original,
+                existingDisplay,
+                res.translated,
+                res.useExisting,
+                res.status,
+                res.suggestion,
+                res.layoutAdaptabilitySuggestion
+            ))
         }
 
         // Adjust column widths
-        table.columnModel.getColumn(0).preferredWidth = 100
-        table.columnModel.getColumn(1).preferredWidth = 150
-        table.columnModel.getColumn(2).preferredWidth = 200
-        table.columnModel.getColumn(3).preferredWidth = 200
-        table.columnModel.getColumn(4).preferredWidth = 50
-        table.columnModel.getColumn(5).preferredWidth = 100
-        table.columnModel.getColumn(6).preferredWidth = 150
+        table.columnModel.getColumn(0).preferredWidth = 90
+        table.columnModel.getColumn(1).preferredWidth = 120
+        table.columnModel.getColumn(2).preferredWidth = 150
+        table.columnModel.getColumn(3).preferredWidth = 150
+        table.columnModel.getColumn(4).preferredWidth = 150
+        table.columnModel.getColumn(5).preferredWidth = 90
+        table.columnModel.getColumn(6).preferredWidth = 80
+        table.columnModel.getColumn(7).preferredWidth = 130
+        table.columnModel.getColumn(8).preferredWidth = 180
 
-        // Set custom renderer for warning
+        // Set custom renderer for warning/status coloring
         table.setDefaultRenderer(Object::class.java, LengthWarningRenderer())
 
         init()
@@ -61,34 +81,34 @@ class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper
 
     override fun createCenterPanel(): JComponent {
         val scrollPane = JBScrollPane(table)
-        scrollPane.preferredSize = Dimension(800, 500)
+        scrollPane.preferredSize = Dimension(1100, 550)
         return scrollPane
     }
 
     fun getConfirmedTranslations(): List<TranslationResult> {
         val list = mutableListOf<TranslationResult>()
-        // We assume the rows in table correspond to 'context' if not sorted.
-        // If sorted, we need to be careful. 
-        // Best approach: Use the original 'context' list and update the 'translated' value from the table map.
-        // We key by (File + Key).
         
-        // Let's build a map from the table data for O(1) lookup
-        // Key: fileName + "::" + keyName
-        val tableData = mutableMapOf<String, String>()
+        val tableData = mutableMapOf<String, Pair<String, Boolean>>()
         for (i in 0 until tableModel.rowCount) {
             val fileName = tableModel.getValueAt(i, 0) as String
             val key = tableModel.getValueAt(i, 1) as String
-            val translated = tableModel.getValueAt(i, 3) as String
-            tableData["$fileName::$key"] = translated
+            val newTranslation = tableModel.getValueAt(i, 4) as String
+            val keepExisting = tableModel.getValueAt(i, 5) as? Boolean ?: false
+            tableData["$fileName::$key"] = Pair(newTranslation, keepExisting)
         }
 
         for (res in context) {
             val uniqueKey = "${res.file.name}::${res.key}"
-            val newTranslation = tableData[uniqueKey]
-            if (newTranslation != null) {
-                list.add(res.copy(translated = newTranslation))
+            val pair = tableData[uniqueKey]
+            if (pair != null) {
+                val (editedNewTranslation, keepExisting) = pair
+                val finalTranslation = if (keepExisting && res.existingTranslation != null) {
+                    res.existingTranslation
+                } else {
+                    editedNewTranslation
+                }
+                list.add(res.copy(translated = finalTranslation, useExisting = keepExisting))
             } else {
-                // Should not happen if rows match, but safe fallback
                 list.add(res)
             }
         }
@@ -103,38 +123,38 @@ class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper
             
             if (table != null) {
                 try {
-                    val warningTitle = table.getValueAt(row, 5) as? String
+                    val key = table.getValueAt(row, 1) as? String
+                    val res = context.find { it.key == key }
+                    val status = table.getValueAt(row, 6) as? String ?: ""
+                    val warningTitle = res?.warningTitle ?: ""
                     
-                    if (!warningTitle.isNullOrBlank()) {
-                        // Context LLM Warning
-                        if (!isSelected) {
-                            c.background = Color(255, 200, 200) // Light red background warning
-                        }
-                        
-                        val key = table.getValueAt(row, 1) as String
-                        val res = context.find { it.key == key }
-                        if (res != null) {
-                            toolTipText = res.warningDetail
+                    if (res != null) {
+                        val tooltips = mutableListOf<String>()
+                        if (res.warningDetail.isNotBlank()) tooltips.add("Length Warning: ${res.warningDetail}")
+                        if (res.layoutAdaptabilitySuggestion.isNotBlank()) tooltips.add("Layout Suggestion: ${res.layoutAdaptabilitySuggestion}")
+                        if (tooltips.isNotEmpty()) {
+                            toolTipText = tooltips.joinToString(" | ")
                         } else {
-                            toolTipText = "Translation may be too long for context!"
+                            toolTipText = null
                         }
-                    } else {
-                        // Ratio is at column 4
-                        val ratioStr = table.getValueAt(row, 4) as? String
-                        if (ratioStr != null) {
-                            val ratio = ratioStr.toFloatOrNull() ?: 0f
-                            
-                            // Heuristic: If translation is > 1.5x longer than original
-                            if (ratio > 1.5) {
-                                if (!isSelected) {
-                                    c.background = Color(255, 230, 200) // Orange warning for heuristic
+
+                        if (!isSelected) {
+                            when {
+                                warningTitle.isNotBlank() || res.layoutAdaptabilitySuggestion.isNotBlank() -> {
+                                    c.background = Color(255, 200, 200) // Light Red for Length/Layout warning
                                 }
-                                toolTipText = "Translation is significantly longer than original (> 150%)"
-                            } else {
-                                if (!isSelected) {
+                                status == "Missing" -> {
+                                    c.background = Color(255, 235, 180) // Soft Orange for Missing key
+                                }
+                                status == "Untranslated" -> {
+                                    c.background = Color(255, 255, 190) // Soft Yellow for Untranslated item
+                                }
+                                res.ratio > 1.5 -> {
+                                    c.background = Color(255, 230, 200) // Heuristic long string
+                                }
+                                else -> {
                                     c.background = table.background
                                 }
-                                toolTipText = null
                             }
                         }
                     }

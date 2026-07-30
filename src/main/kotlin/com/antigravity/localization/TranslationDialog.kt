@@ -417,7 +417,7 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
                 modelComboBox.item = properties.getValue(MODEL_PREFIX + "OpenAI", "gpt-4o")
             }
             "Gemini" -> {
-                listOf("gemini-3.5-flash", "gemini-3.5-pro", "gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.5-pro").forEach { modelComboBox.addItem(it) }
+                listOf("gemini-3.5-flash", "gemini-3.5-pro", "gemini-2.5-flash", "gemini-2.5-pro").forEach { modelComboBox.addItem(it) }
                 modelComboBox.item = properties.getValue(MODEL_PREFIX + "Gemini", "gemini-3.5-flash")
             }
             "Grok (xAI)" -> {

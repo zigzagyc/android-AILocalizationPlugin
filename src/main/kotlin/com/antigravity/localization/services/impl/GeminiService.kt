@@ -19,7 +19,7 @@ class GeminiService : TranslationService {
     var model: String = "gemini-3.5-flash"
 
     private fun getModelCandidates(): List<String> {
-        return listOf(model, "gemini-3.5-flash", "gemini-3.5-pro", "gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.5-pro").distinct()
+        return listOf(model, "gemini-3.5-flash", "gemini-3.5-pro", "gemini-2.5-flash", "gemini-2.5-pro").distinct()
     }
 
     override suspend fun translate(text: String, targetLang: String, context: String?, apiKey: String): String = withContext(Dispatchers.IO) {

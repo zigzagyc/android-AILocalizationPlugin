@@ -80,7 +80,7 @@ object ModelFetcher {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return listOf("gemini-3.5-flash", "gemini-3.5-pro", "gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.5-pro")
+        return listOf("gemini-3.5-flash", "gemini-3.5-pro", "gemini-2.5-flash", "gemini-2.5-pro")
     }
 
     private fun fetchGrokModels(apiKey: String): List<String> {

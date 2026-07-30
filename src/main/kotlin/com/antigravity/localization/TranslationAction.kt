@@ -119,7 +119,7 @@ class TranslationAction : AnAction() {
             override fun onSuccess() {
                 if (results != null && results!!.isNotEmpty()) {
                     // Show Review Dialog on EDT
-                    val reviewDialog = ReviewDialog(results!!)
+                    val reviewDialog = ReviewDialog(results!!, project = project, targetLang = targetLang)
                     if (reviewDialog.showAndGet()) {
                         val confirmed = reviewDialog.getConfirmedTranslations()
                         // Write to file

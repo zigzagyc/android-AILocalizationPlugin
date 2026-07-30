@@ -1,6 +1,8 @@
 package com.antigravity.localization
 
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.ui.Messages
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import com.intellij.openapi.vfs.VirtualFile
@@ -8,6 +10,7 @@ import java.awt.Color
 import java.awt.Component
 import java.awt.Dimension
 import javax.swing.JComponent
+import javax.swing.JPanel
 import javax.swing.JTable
 import javax.swing.table.DefaultTableCellRenderer
 import javax.swing.table.DefaultTableModel
@@ -27,13 +30,17 @@ data class TranslationResult(
     val layoutAdaptabilitySuggestion: String = ""
 )
 
-class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper(true) {
+class ReviewDialog(
+    private val context: List<TranslationResult>,
+    private val project: Project? = null,
+    private val targetLang: String = "target",
+    private val referencedLayoutFiles: List<VirtualFile> = emptyList()
+) : DialogWrapper(true) {
 
     private val tableModel = object : DefaultTableModel(
         arrayOf("File", "Key", "Original", "Existing", "New Translation", "Keep Existing?", "Status", "Text Suggestion", "Layout Adaptability Suggestion"), 0
     ) {
         override fun isCellEditable(row: Int, column: Int): Boolean {
-            // Column 4 (New Translation), 5 (Keep Existing checkbox), 7 (Text Suggestion) editable/selectable
             return column == 4 || column == 5 || column == 7 || column == 8
         }
 
@@ -83,6 +90,51 @@ class ReviewDialog(private val context: List<TranslationResult>) : DialogWrapper
         val scrollPane = JBScrollPane(table)
         scrollPane.preferredSize = Dimension(1100, 550)
         return scrollPane
+    }
+
+    override fun createSouthAdditionalPanel(): JPanel? {
+        val proj = project ?: return null
+        val panel = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT))
+        val captureBtn = javax.swing.JButton("Capture Layout Screenshots ($targetLang)")
+        captureBtn.addActionListener {
+            val currentConfirmed = getConfirmedTranslations().associate { it.key to it.translated }
+            val filesToCapture = if (referencedLayoutFiles.isNotEmpty()) {
+                referencedLayoutFiles
+            } else {
+                findProjectLayoutFiles(proj)
+            }
+
+            if (filesToCapture.isEmpty()) {
+                Messages.showInfoMessage(proj, "No layout XML files found to preview.", "Info")
+                return@addActionListener
+            }
+
+            val saved = LayoutPreviewRenderer.captureLayoutScreenshots(proj, filesToCapture, targetLang, currentConfirmed)
+            if (saved.isNotEmpty()) {
+                val msg = "Captured ${saved.size} layout screenshots in project directory:\nscreenshots/$targetLang/\n\nFiles:\n" + saved.joinToString("\n") { it.name }
+                Messages.showInfoMessage(proj, msg, "Screenshots Captured")
+            } else {
+                Messages.showWarningDialog(proj, "Failed to capture layout screenshots.", "Warning")
+            }
+        }
+        panel.add(captureBtn)
+        return panel
+    }
+
+    private fun findProjectLayoutFiles(proj: Project): List<VirtualFile> {
+        val list = mutableListOf<VirtualFile>()
+        val basePath = proj.basePath ?: return list
+        val baseDir = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(basePath) ?: return list
+        
+        fun search(file: VirtualFile) {
+            if (file.isDirectory) {
+                for (child in file.children) search(child)
+            } else if (file.extension == "xml" && file.parent?.name?.startsWith("layout") == true) {
+                list.add(file)
+            }
+        }
+        search(baseDir)
+        return list
     }
 
     fun getConfirmedTranslations(): List<TranslationResult> {

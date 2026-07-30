@@ -19,6 +19,10 @@ class ClaudeService : TranslationService {
     private val gson = Gson()
     var model: String = "claude-3-7-sonnet-20250219"
 
+    private fun getModelCandidates(): List<String> {
+        return listOf(model, "claude-5-sonnet", "claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229").distinct()
+    }
+
     override suspend fun translate(text: String, targetLang: String, context: String?, apiKey: String): String = withContext(Dispatchers.IO) {
         val prompt = "Translate the following Android XML string value to $targetLang. " +
                 (if (!context.isNullOrBlank()) "Context/Rules: $context. " else "") +
@@ -30,51 +34,62 @@ class ClaudeService : TranslationService {
             addProperty("content", prompt)
         })
 
-        val requestBody = JsonObject().apply {
-            addProperty("model", model)
-            addProperty("max_tokens", 1024)
-            addProperty("system", "You are a helpful assistant that translates Android string resources accurately and concisely.")
-            add("messages", messages)
-        }
+        var lastErrorMsg = ""
 
-        val request = HttpRequest.newBuilder()
-            .uri(URI.create("https://api.anthropic.com/v1/messages"))
-            .header("Content-Type", "application/json")
-            .header("x-api-key", apiKey)
-            .header("anthropic-version", "2023-06-01")
-            .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
-            .build()
+        for (candidateModel in getModelCandidates()) {
+            val requestBody = JsonObject().apply {
+                addProperty("model", candidateModel)
+                addProperty("max_tokens", 1024)
+                addProperty("system", "You are a helpful assistant that translates Android string resources accurately and concisely.")
+                add("messages", messages)
+            }
 
-        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.anthropic.com/v1/messages"))
+                .header("Content-Type", "application/json")
+                .header("x-api-key", apiKey)
+                .header("anthropic-version", "2023-06-01")
+                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
+                .build()
 
-        if (response.statusCode() != 200) {
-            val errorBody = response.body()
-            try {
-                val jsonResponse = gson.fromJson(errorBody, JsonObject::class.java)
-                val error = jsonResponse.getAsJsonObject("error")
-                val message = error.get("message").asString
-                val errorType = error.get("type")?.asString
+            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
 
-                if (response.statusCode() == 429 || errorType == "rate_limit_error") {
-                    throw QuotaExceededException("Claude Quota Exceeded: $message")
+            if (response.statusCode() == 200) {
+                model = candidateModel
+                val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
+                val contentArray = jsonResponse.getAsJsonArray("content")
+                if (contentArray != null && contentArray.size() > 0) {
+                    val firstContent = contentArray.get(0).asJsonObject
+                    if (firstContent.has("text")) {
+                        return@withContext firstContent.get("text").asString.trim()
+                    }
                 }
-                throw RuntimeException("Claude Error: $message")
-            } catch (e: Exception) {
-                if (e is QuotaExceededException) throw e
-                throw RuntimeException("Claude translation failed (${response.statusCode()}): $errorBody")
+            } else {
+                val errorBody = response.body()
+                try {
+                    val jsonResponse = gson.fromJson(errorBody, JsonObject::class.java)
+                    val error = jsonResponse.getAsJsonObject("error")
+                    val message = error.get("message").asString
+                    val errorType = error.get("type")?.asString
+
+                    if (response.statusCode() == 429 || errorType == "rate_limit_error") {
+                        throw QuotaExceededException("Claude Quota Exceeded: $message")
+                    }
+
+                    if (response.statusCode() == 404 || errorType == "not_found_error" || message.contains("not found", ignoreCase = true)) {
+                        lastErrorMsg = message
+                        continue
+                    }
+
+                    throw RuntimeException("Claude Error: $message")
+                } catch (e: Exception) {
+                    if (e is QuotaExceededException) throw e
+                    lastErrorMsg = "(${response.statusCode()}): $errorBody"
+                }
             }
         }
 
-        val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
-        val contentArray = jsonResponse.getAsJsonArray("content")
-        if (contentArray != null && contentArray.size() > 0) {
-            val firstContent = contentArray.get(0).asJsonObject
-            if (firstContent.has("text")) {
-                return@withContext firstContent.get("text").asString.trim()
-            }
-        }
-
-        throw RuntimeException("Claude returned unexpected response structure: ${response.body()}")
+        throw RuntimeException("Claude translation failed: $lastErrorMsg")
     }
 
     override suspend fun verifyTranslationContext(

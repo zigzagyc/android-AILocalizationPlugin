@@ -1,3 +1,6 @@
+## [1.0.4]
+- Fixed module compatibility for JetBrains Gateway and non-Java IDE environments by removing unnecessary mandatory Java module dependency.
+
 ## [1.0.3]
 - Enhanced platform compatibility across all current and future versions of Android Studio and IntelliJ IDEA.
 - Added context-aware length checks and abbreviation suggestions.

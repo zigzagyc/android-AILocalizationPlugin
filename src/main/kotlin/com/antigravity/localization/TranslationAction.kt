@@ -101,11 +101,13 @@ class TranslationAction : AnAction() {
         }
 
         val service = getService(serviceName)
-        if (service is OpenAIService) {
-             val model = dialog.modelComboBox.item as? String
-             if (!model.isNullOrBlank()) {
-                 service.model = model
-             }
+        val selectedModel = dialog.modelComboBox.item as? String
+        if (!selectedModel.isNullOrBlank()) {
+            when (service) {
+                is OpenAIService -> service.model = selectedModel
+                is GeminiService -> service.model = selectedModel
+                is GrokService -> service.model = selectedModel
+            }
         }
 
         object : Task.Backgroundable(project, "Translating to $targetLang...", true) {

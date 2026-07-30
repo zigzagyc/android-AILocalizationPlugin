@@ -33,6 +33,7 @@ import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import java.awt.FlowLayout
 import javax.swing.JButton
+import kotlinx.coroutines.runBlocking
 
 class TranslationDialog(private val project: Project, private val stringMap: Map<String, String>) : DialogWrapper(true) {
     val serviceComboBox = ComboBox(arrayOf("OpenAI (ChatGPT)", "Gemini", "Grok (xAI)", "Google Translate", "Microsoft Translator", "DeepL", "AWS Translate"))
@@ -41,6 +42,7 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
     val regionLabel = JBLabel("Region:")
     val modelComboBox = ComboBox(arrayOf("gpt-4o", "gpt-4o-mini", "gpt-4-turbo"))
     val modelLabel = JBLabel("Model:")
+    val refreshModelsButton = JButton("Refresh Models")
     val statsLabel = JBLabel("Selected: 0 strings (0 chars)")
     
     val searchField = JBTextField()
@@ -270,6 +272,10 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
         
         if (currentService == "OpenAI (ChatGPT)") {
             properties.setValue(MODEL_PREFIX + "OpenAI", modelComboBox.item as String)
+        } else if (currentService == "Gemini") {
+            properties.setValue(MODEL_PREFIX + "Gemini", modelComboBox.item as String)
+        } else if (currentService == "Grok (xAI)") {
+            properties.setValue(MODEL_PREFIX + "Grok", modelComboBox.item as String)
         }
         super.doOKAction()
     }
@@ -376,6 +382,68 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
              val awsRegions = arrayOf("us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-central-1", "ap-southeast-1", "ap-northeast-1")
              for (r in awsRegions) regionComboBox.addItem(r)
         }
+
+        val refreshModelsButton = javax.swing.JButton("Refresh Models")
+        refreshModelsButton.addActionListener {
+            val service = serviceComboBox.item
+            val apiKey = String(apiKeyField.password)
+            fetchAndPopulateModels(service, apiKey)
+        }
+
+        // Update Model Visibility and Options
+        val isAiVendor = service == "OpenAI (ChatGPT)" || service == "Gemini" || service == "Grok (xAI)"
+
+        modelLabel.isVisible = isAiVendor
+        modelComboBox.isVisible = isAiVendor
+        refreshModelsButton.isVisible = isAiVendor
+
+        if (isAiVendor) {
+            val apiKey = String(apiKeyField.password)
+            if (apiKey.isNotBlank()) {
+                fetchAndPopulateModels(service, apiKey)
+            } else {
+                populateDefaultModels(service)
+            }
+        }
+    }
+
+    private fun populateDefaultModels(service: String) {
+        modelComboBox.removeAllItems()
+        when (service) {
+            "OpenAI (ChatGPT)" -> {
+                listOf("gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo").forEach { modelComboBox.addItem(it) }
+                modelComboBox.item = properties.getValue(MODEL_PREFIX + "OpenAI", "gpt-4o")
+            }
+            "Gemini" -> {
+                listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.5-pro").forEach { modelComboBox.addItem(it) }
+                modelComboBox.item = properties.getValue(MODEL_PREFIX + "Gemini", "gemini-2.5-flash")
+            }
+            "Grok (xAI)" -> {
+                listOf("grok-beta", "grok-2", "grok-2-mini", "grok-vision-beta").forEach { modelComboBox.addItem(it) }
+                modelComboBox.item = properties.getValue(MODEL_PREFIX + "Grok", "grok-beta")
+            }
+        }
+    }
+
+    private fun fetchAndPopulateModels(service: String, apiKey: String) {
+        val app = ApplicationManager.getApplication()
+        app.executeOnPooledThread {
+            val fetched = runBlocking {
+                com.antigravity.localization.services.ModelFetcher.fetchModelsForService(service, apiKey)
+            }
+            app.invokeLater {
+                if (fetched.isNotEmpty()) {
+                    val currentSelected = modelComboBox.item
+                    modelComboBox.removeAllItems()
+                    fetched.forEach { modelComboBox.addItem(it) }
+                    if (fetched.contains(currentSelected)) {
+                        modelComboBox.item = currentSelected
+                    } else {
+                        modelComboBox.selectedIndex = 0
+                    }
+                }
+            }
+        }
     }
 
     private fun updateApiHelp() {
@@ -424,9 +492,21 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
         c.weightx = 1.0
         panel.add(regionComboBox, c)
 
+        // Model Selection & Refresh
+        c.gridx = 0
+        c.gridy = 3
+        c.weightx = 0.0
+        panel.add(modelLabel, c)
+        c.gridx = 1
+        c.weightx = 1.0
+        val modelPanel = JPanel(BorderLayout(5, 0))
+        modelPanel.add(modelComboBox, BorderLayout.CENTER)
+        modelPanel.add(refreshModelsButton, BorderLayout.EAST)
+        panel.add(modelPanel, c)
+
         // API Key Help
         c.gridx = 1
-        c.gridy = 3
+        c.gridy = 4
         c.weightx = 1.0
         c.insets = Insets(0, 5, 5, 5) // Less top padding
         panel.add(apiKeyHelpLabel, c)
@@ -434,7 +514,7 @@ class TranslationDialog(private val project: Project, private val stringMap: Map
 
         // Target Language
         c.gridx = 0
-        c.gridy = 4
+        c.gridy = 5
         c.weightx = 0.0
         panel.add(JBLabel("Target Language:"), c)
         c.gridx = 1

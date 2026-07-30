@@ -1,3 +1,6 @@
+## [1.0.6]
+- Added dynamic AI model fetching per vendor (OpenAI, Gemini, Grok) with live API key queries and automatic 404 fallback handling.
+
 ## [1.0.5]
 - Added existing translation verification, interactive diff selection, static layout adaptability suggestions, and static layout XML screenshot capture.
 

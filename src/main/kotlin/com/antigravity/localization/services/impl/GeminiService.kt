@@ -16,6 +16,11 @@ class GeminiService : TranslationService {
     override val name = "Gemini"
     private val client = HttpClient.newHttpClient()
     private val gson = Gson()
+    var model: String = "gemini-2.5-flash"
+
+    private fun getModelCandidates(): List<String> {
+        return listOf(model, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.5-pro").distinct()
+    }
 
     override suspend fun translate(text: String, targetLang: String, context: String?, apiKey: String): String = withContext(Dispatchers.IO) {
         val prompt = "Translate the following Android XML string value to $targetLang. " +
@@ -36,52 +41,62 @@ class GeminiService : TranslationService {
             add("contents", contents)
         }
 
-        val request = HttpRequest.newBuilder()
-            .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"))
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
-            .build()
+        val candidatesToTry = getModelCandidates()
+        var lastErrorMsg = ""
 
-        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+        for (candidateModel in candidatesToTry) {
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/models/$candidateModel:generateContent?key=$apiKey"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
+                .build()
 
-        if (response.statusCode() != 200) {
-            val errorBody = response.body()
-            try {
-                val jsonResponse = gson.fromJson(errorBody, JsonObject::class.java)
-                val error = jsonResponse.getAsJsonObject("error")
-                val message = error.get("message").asString
-                val status = error.get("status")?.asString
-                val code = error.get("code")?.asInt
+            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
 
-                if (response.statusCode() == 429 || status == "RESOURCE_EXHAUSTED" || code == 429) {
-                    throw QuotaExceededException("Gemini Quota Exceeded: $message")
+            if (response.statusCode() == 200) {
+                model = candidateModel // Remember working model
+                val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
+                try {
+                    val candidates = jsonResponse.getAsJsonArray("candidates")
+                    if (candidates != null && candidates.size() > 0) {
+                        val candidate = candidates.get(0).asJsonObject
+                        val content = candidate.getAsJsonObject("content")
+                        val partsResponse = content.getAsJsonArray("parts")
+                        if (partsResponse != null && partsResponse.size() > 0) {
+                            return@withContext partsResponse.get(0).asJsonObject.get("text").asString.trim()
+                        }
+                    }
+                } catch (e: Exception) {
+                    throw RuntimeException("Failed to parse Gemini response: ${response.body()}", e)
                 }
-                
-                throw RuntimeException("Gemini Error: $message")
-                
-            } catch (e: Exception) {
-                if (e is QuotaExceededException) throw e
-                throw RuntimeException("Gemini translation failed (${response.statusCode()}): $errorBody")
+            } else {
+                val errorBody = response.body()
+                try {
+                    val jsonResponse = gson.fromJson(errorBody, JsonObject::class.java)
+                    val error = jsonResponse.getAsJsonObject("error")
+                    val message = error.get("message").asString
+                    val status = error.get("status")?.asString
+                    val code = error.get("code")?.asInt
+
+                    if (response.statusCode() == 429 || status == "RESOURCE_EXHAUSTED" || code == 429) {
+                        throw QuotaExceededException("Gemini Quota Exceeded: $message")
+                    }
+
+                    // If 404 or model not found, try next candidate model
+                    if (response.statusCode() == 404 || message.contains("not found", ignoreCase = true)) {
+                        lastErrorMsg = message
+                        continue
+                    }
+
+                    throw RuntimeException("Gemini Error: $message")
+                } catch (e: Exception) {
+                    if (e is QuotaExceededException) throw e
+                    lastErrorMsg = "(${response.statusCode()}): $errorBody"
+                }
             }
         }
 
-        val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
-        
-        try {
-            val candidates = jsonResponse.getAsJsonArray("candidates")
-            if (candidates != null && candidates.size() > 0) {
-                val candidate = candidates.get(0).asJsonObject
-                val content = candidate.getAsJsonObject("content")
-                val partsResponse = content.getAsJsonArray("parts")
-                if (partsResponse != null && partsResponse.size() > 0) {
-                    return@withContext partsResponse.get(0).asJsonObject.get("text").asString.trim()
-                }
-            }
-        } catch (e: Exception) {
-            throw RuntimeException("Failed to parse Gemini response: ${response.body()}", e)
-        }
-        
-        throw RuntimeException("Gemini returned unexpected response structure: ${response.body()}")
+        throw RuntimeException("Gemini translation failed: $lastErrorMsg")
     }
 
     override suspend fun verifyTranslationContext(
@@ -140,35 +155,37 @@ class GeminiService : TranslationService {
             add("systemInstruction", systemInstruction)
         }
 
-        val request = HttpRequest.newBuilder()
-            .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"))
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
-            .build()
+        for (candidateModel in getModelCandidates()) {
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/models/$candidateModel:generateContent?key=$apiKey"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
+                .build()
 
-        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
 
-        if (response.statusCode() == 200) {
-            try {
-                val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
-                val candidates = jsonResponse.getAsJsonArray("candidates")
-                if (candidates != null && candidates.size() > 0) {
-                    val candidate = candidates.get(0).asJsonObject
-                    val content = candidate.getAsJsonObject("content")
-                    val partsResponse = content.getAsJsonArray("parts")
-                    if (partsResponse != null && partsResponse.size() > 0) {
-                        val text = partsResponse.get(0).asJsonObject.get("text").asString.trim()
-                        val resultJson = gson.fromJson(text, JsonObject::class.java)
-                        return@withContext com.antigravity.localization.services.TranslationVerificationResult(
-                            isTooLong = resultJson.get("isTooLong")?.asBoolean ?: false,
-                            targetAbbreviationSuggestion = if (resultJson.has("targetAbbreviationSuggestion") && !resultJson.get("targetAbbreviationSuggestion").isJsonNull) resultJson.get("targetAbbreviationSuggestion").asString else null,
-                            originalAbbreviationMeaning = if (resultJson.has("originalAbbreviationMeaning") && !resultJson.get("originalAbbreviationMeaning").isJsonNull) resultJson.get("originalAbbreviationMeaning").asString else null,
-                            layoutAdaptabilitySuggestion = if (resultJson.has("layoutAdaptabilitySuggestion") && !resultJson.get("layoutAdaptabilitySuggestion").isJsonNull) resultJson.get("layoutAdaptabilitySuggestion").asString else null
-                        )
+            if (response.statusCode() == 200) {
+                try {
+                    val jsonResponse = gson.fromJson(response.body(), JsonObject::class.java)
+                    val candidates = jsonResponse.getAsJsonArray("candidates")
+                    if (candidates != null && candidates.size() > 0) {
+                        val candidate = candidates.get(0).asJsonObject
+                        val content = candidate.getAsJsonObject("content")
+                        val partsResponse = content.getAsJsonArray("parts")
+                        if (partsResponse != null && partsResponse.size() > 0) {
+                            val text = partsResponse.get(0).asJsonObject.get("text").asString.trim()
+                            val resultJson = gson.fromJson(text, JsonObject::class.java)
+                            return@withContext com.antigravity.localization.services.TranslationVerificationResult(
+                                isTooLong = resultJson.get("isTooLong")?.asBoolean ?: false,
+                                targetAbbreviationSuggestion = if (resultJson.has("targetAbbreviationSuggestion") && !resultJson.get("targetAbbreviationSuggestion").isJsonNull) resultJson.get("targetAbbreviationSuggestion").asString else null,
+                                originalAbbreviationMeaning = if (resultJson.has("originalAbbreviationMeaning") && !resultJson.get("originalAbbreviationMeaning").isJsonNull) resultJson.get("originalAbbreviationMeaning").asString else null,
+                                layoutAdaptabilitySuggestion = if (resultJson.has("layoutAdaptabilitySuggestion") && !resultJson.get("layoutAdaptabilitySuggestion").isJsonNull) resultJson.get("layoutAdaptabilitySuggestion").asString else null
+                            )
+                        }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
         }
         

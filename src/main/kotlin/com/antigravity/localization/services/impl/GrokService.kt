@@ -15,6 +15,7 @@ class GrokService : TranslationService {
     override val name = "Grok (xAI)"
     private val client = HttpClient.newHttpClient()
     private val gson = Gson()
+    var model: String = "grok-beta"
 
     override suspend fun translate(text: String, targetLang: String, context: String?, apiKey: String): String = withContext(Dispatchers.IO) {
         val prompt = "Translate the following Android XML string value to $targetLang. " +
@@ -32,9 +33,7 @@ class GrokService : TranslationService {
         })
 
         val requestBody = JsonObject().apply {
-            addProperty("model", "grok-2-latest") // Or grok-beta, need to confirm exact model name. Let's use 'grok-beta' as a safer bet or check xAI docs if possible. 
-                                                  // Actually 'grok-beta' is common. Let's use 'grok-beta'. 
-                                                  // Wait, xAI documentation says 'grok-beta' or 'grok-vision-beta'. Let's stick with 'grok-beta'.
+            addProperty("model", model)
             add("messages", messages)
         }
 
@@ -104,7 +103,7 @@ class GrokService : TranslationService {
         })
 
         val requestBody = JsonObject().apply {
-            addProperty("model", "grok-beta")
+            addProperty("model", model)
             add("messages", messages)
             val responseFormat = JsonObject()
             responseFormat.addProperty("type", "json_object")

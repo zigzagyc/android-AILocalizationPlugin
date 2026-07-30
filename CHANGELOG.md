@@ -1,5 +1,8 @@
 ## [1.0.4]
 - Fixed module compatibility for JetBrains Gateway and non-Java IDE environments by removing unnecessary mandatory Java module dependency.
+- Added existing target language translation verification and interactive diff selection (Keep Existing vs Use New).
+- Added static layout XML container size analysis with dual text shortening & layout adaptability suggestions.
+- Added static layout XML screenshot capture feature (`screenshots/<targetLang>/<layout_name>.png`).
 
 ## [1.0.3]
 - Enhanced platform compatibility across all current and future versions of Android Studio and IntelliJ IDEA.

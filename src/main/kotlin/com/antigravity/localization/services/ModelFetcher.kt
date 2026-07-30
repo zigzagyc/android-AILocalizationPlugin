@@ -40,7 +40,8 @@ object ModelFetcher {
                 val models = mutableListOf<String>()
                 for (i in 0 until data.size()) {
                     val id = data.get(i).asJsonObject.get("id").asString
-                    if (id.startsWith("gpt-") || id.startsWith("o1") || id.startsWith("o3") || id.startsWith("chatgpt-")) {
+                    val isNonChatModel = id.contains("embedding") || id.contains("whisper") || id.contains("tts") || id.contains("dall-e") || id.contains("babbage") || id.contains("davinci") || id.contains("moderation")
+                    if (!isNonChatModel && (id.startsWith("gpt") || id.startsWith("o") || id.startsWith("chatgpt"))) {
                         models.add(id)
                     }
                 }

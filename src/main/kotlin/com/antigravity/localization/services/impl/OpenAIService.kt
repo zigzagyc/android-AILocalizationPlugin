@@ -87,6 +87,10 @@ class OpenAIService : TranslationService {
                     val type = error.get("type")?.asString
                     val code = error.get("code")?.asString
 
+                    if (response.statusCode() == 401 || type == "invalid_request_error" && message.contains("API key", ignoreCase = true)) {
+                        throw RuntimeException("Invalid OpenAI API Key. Please get a valid API key at https://platform.openai.com/api-keys")
+                    }
+
                     if (response.statusCode() == 429 || type == "insufficient_quota" || code == "insufficient_quota") {
                         throw QuotaExceededException("OpenAI Quota Exceeded: $message")
                     }

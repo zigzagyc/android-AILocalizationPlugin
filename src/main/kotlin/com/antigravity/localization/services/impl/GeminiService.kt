@@ -91,6 +91,10 @@ class GeminiService : TranslationService {
                     val status = error.get("status")?.asString
                     val code = error.get("code")?.asInt
 
+                    if (response.statusCode() == 400 || response.statusCode() == 401 || message.contains("API key not valid", ignoreCase = true) || message.contains("API_KEY_INVALID", ignoreCase = true)) {
+                        throw RuntimeException("Invalid Gemini API Key. Please get a valid API key at https://aistudio.google.com/app/apikey")
+                    }
+
                     if (response.statusCode() == 429 || status == "RESOURCE_EXHAUSTED" || code == 429) {
                         throw QuotaExceededException("Gemini Quota Exceeded: $message")
                     }
